@@ -1,0 +1,44 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kode
+        uses: actions/checkout@v3
+
+      - name: Setup Java (Syarat wajib untuk Android)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0' # Versi Flutter terbaru
+
+      - name: Rakit Proyek & Build APK
+        run: |
+          # 1. Robot membuat kerangka aplikasi baru secara otomatis
+          flutter create smart_motor
+          
+          # 2. Menimpa file bawaan dengan file main.dart buatan Anda
+          cp lib/main.dart smart_motor/lib/main.dart
+          
+          # 3. Masuk ke folder aplikasi dan tambahkan paket 'http'
+          cd smart_motor
+          flutter pub add http
+          
+          # 4. Mulai merakit menjadi APK!
+          flutter build apk --release
+
+      - name: Upload Hasil APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aplikasi-Motor-3D
+          path: smart_motor/build/app/outputs/flutter-apk/app-release.apk
