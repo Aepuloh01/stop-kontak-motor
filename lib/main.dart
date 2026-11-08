@@ -13,9 +13,9 @@ class SmartMotorApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Smart Motor 3D',
+      title: 'Smart Vario & Home',
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212), // Background gelap elegan
+        scaffoldBackgroundColor: const Color(0xFF121212),
       ),
       home: const MotorDashboard(),
     );
@@ -30,45 +30,62 @@ class MotorDashboard extends StatefulWidget {
 }
 
 class _MotorDashboardState extends State<MotorDashboard> {
-  String statusMotor = "STANDBY";
+  String statusSistem = "STANDBY";
   Color warnaStatus = Colors.grey;
+  bool isStarting = false; // Deteksi apakah sedang proses jeda injeksi
 
-  // Fungsi untuk mengirim sinyal ke NodeMCU
+  // Fungsi Kirim Perintah ke NodeMCU
   Future<void> kirimPerintah(String endpoint, String statusSukses, Color warna) async {
-    setState(() {
-      statusMotor = "MENGIRIM...";
-      warnaStatus = Colors.orange;
-    });
-
     try {
-      // Mengirim perintah ke IP NodeMCU (192.168.4.1)
       final response = await http
           .get(Uri.parse('http://192.168.4.1/$endpoint'))
-          .timeout(const Duration(seconds: 3)); // Batas waktu 3 detik
+          .timeout(const Duration(seconds: 3));
 
       if (response.statusCode == 200) {
         setState(() {
-          statusMotor = statusSukses;
+          statusSistem = statusSukses;
           warnaStatus = warna;
         });
       }
     } catch (e) {
       setState(() {
-        statusMotor = "TIDAK ADA KONEKSI WIFI";
+        statusSistem = "TIDAK ADA KONEKSI WIFI";
         warnaStatus = Colors.redAccent;
       });
     }
   }
 
-  // Desain Tombol 3D (Neumorphism & Glowing)
-  Widget tombol3D({
+  // Fungsi Khusus Engine Start (Dengan Jeda Injeksi 3 Detik)
+  void prosesEngineStart() async {
+    setState(() {
+      isStarting = true;
+      statusSistem = "CHECKING INJECTION...";
+      warnaStatus = Colors.amber; // Warna kuning indikator injeksi
+    });
+
+    // Simulasi menyalakan kelistrikan kontak pertama (misal endpoint '/kontak_on')
+    // await http.get(Uri.parse('http://192.168.4.1/kontak_on')); 
+
+    // Jeda otomatis 3 detik menunggu fuel pump Vario
+    await Future.delayed(const Duration(seconds: 3));
+
+    // Eksekusi dinamo starter
+    await kirimPerintah("on", "ENGINE RUNNING", Colors.greenAccent);
+
+    setState(() {
+      isStarting = false;
+    });
+  }
+
+  // Desain Tombol Utama (Motor)
+  Widget tombolMotor({
     required String label,
     required Color warnaGlow,
-    required String endpoint,
-    required String statusTeks,
+    required VoidCallback onTap,
+    bool isLoading = false,
   }) {
     return GestureDetector(
-      onTap: () => kirimPerintah(endpoint, statusTeks, warnaGlow),
+      onTap: isLoading ? null : onTap,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 20),
@@ -76,37 +93,44 @@ class _MotorDashboardState extends State<MotorDashboard> {
           color: const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            // Efek Cahaya (Glow) di bawah tombol
-            BoxShadow(
-              color: warnaGlow.withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-            // Bayangan Gelap 3D
-            const BoxShadow(
-              color: Colors.black87,
-              blurRadius: 15,
-              offset: Offset(5, 5),
-            ),
-            // Pantulan Cahaya 3D di sudut atas
-            const BoxShadow(
-              color: Colors.white10,
-              blurRadius: 15,
-              offset: Offset(-5, -5),
-            ),
+            BoxShadow(color: warnaGlow.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 8)),
+            const BoxShadow(color: Colors.black87, blurRadius: 15, offset: Offset(5, 5)),
+            const BoxShadow(color: Colors.white10, blurRadius: 15, offset: Offset(-5, -5)),
           ],
         ),
         child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: warnaGlow,
-              letterSpacing: 2,
-            ),
-          ),
+          child: isLoading
+              ? const SizedBox(
+                  height: 25, width: 25,
+                  child: CircularProgressIndicator(color: Colors.amber, strokeWidth: 3),
+                )
+              : Text(
+                  label,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: warnaGlow, letterSpacing: 2),
+                ),
         ),
+      ),
+    );
+  }
+
+  // Desain Tombol Grid (Smart Home)
+  Widget tombolGrid(String iconUrl, String title, IconData icon) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: const [
+          BoxShadow(color: Colors.black87, blurRadius: 10, offset: Offset(4, 4)),
+          BoxShadow(color: Colors.white10, blurRadius: 10, offset: Offset(-4, -4)),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 40, color: Colors.blueAccent),
+          const SizedBox(height: 10),
+          Text(title, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -117,60 +141,75 @@ class _MotorDashboardState extends State<MotorDashboard> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          "SMART MOTOR VARIO 125",
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
-        ),
+        title: const Text("SMART VARIO 125", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(30.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Indikator Status di bagian atas
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: warnaStatus.withOpacity(0.5), width: 2),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(25.0),
+          child: Column(
+            children: [
+              // Panel Status
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: warnaStatus.withOpacity(0.5), width: 2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.power_settings_new, color: warnaStatus),
+                    const SizedBox(width: 10),
+                    Text(statusSistem, style: TextStyle(color: warnaStatus, fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.power_settings_new, color: warnaStatus),
-                  const SizedBox(width: 10),
-                  Text(
-                    statusMotor,
-                    style: TextStyle(
-                      color: warnaStatus,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 40),
+
+              // Tombol Kontrol Motor
+              tombolMotor(
+                label: "ENGINE START",
+                warnaGlow: Colors.greenAccent,
+                isLoading: isStarting,
+                onTap: prosesEngineStart,
               ),
-            ),
-            const SizedBox(height: 60),
+              const SizedBox(height: 25),
+              tombolMotor(
+                label: "ENGINE STOP",
+                warnaGlow: Colors.redAccent,
+                onTap: () => kirimPerintah("off", "ENGINE STOPPED", Colors.redAccent),
+              ),
+              
+              const SizedBox(height: 40),
+              const Divider(color: Colors.white24, thickness: 1),
+              const SizedBox(height: 20),
+              
+              // Judul Menu Tambahan
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text("SMART HOME DEVICES", style: TextStyle(color: Colors.grey, letterSpacing: 2, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 20),
 
-            // Tombol START 3D
-            tombol3D(
-              label: "ENGINE START",
-              warnaGlow: Colors.greenAccent,
-              endpoint: "on",
-              statusTeks: "MOTOR HIDUP",
-            ),
-            const SizedBox(height: 30),
-
-            // Tombol STOP 3D
-            tombol3D(
-              label: "ENGINE STOP",
-              warnaGlow: Colors.redAccent,
-              endpoint: "off",
-              statusTeks: "MOTOR MATI",
-            ),
-          ],
+              // Grid Menu Masa Depan
+              Expanded(
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: 1.1,
+                  children: [
+                    tombolGrid("lampu", "Lampu Teras", Icons.lightbulb_outline),
+                    tombolGrid("pagar", "Pagar Garasi", Icons.door_sliding_outlined),
+                    tombolGrid("cctv", "CCTV Kamera", Icons.videocam_outlined),
+                    tombolGrid("kipas", "Kipas Angin", Icons.air),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
