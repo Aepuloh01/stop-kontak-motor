@@ -118,7 +118,7 @@ class _MotorDashboardState extends State<MotorDashboard> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text(
-          "CROWS NIGHT GARAGE",
+          "SMART MOTOR VARIO 125",
           style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
         ),
         centerTitle: true,
