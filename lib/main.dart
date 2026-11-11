@@ -49,8 +49,8 @@ class _MotorDashboardState extends State<MotorDashboard> {
       }
     } catch (e) {
       setState(() {
-        statusSistem = "TIDAK ADA KONEKSI WIFI";
-        warnaStatus = Colors.redAccent;
+        statusSistem = "GAGAL TERHUBUNG";
+        warnaStatus = Colors.orangeAccent;
       });
     }
   }
@@ -62,9 +62,6 @@ class _MotorDashboardState extends State<MotorDashboard> {
       statusSistem = "CHECKING INJECTION...";
       warnaStatus = Colors.amber; // Warna kuning indikator injeksi
     });
-
-    // Simulasi menyalakan kelistrikan kontak pertama (misal endpoint '/kontak_on')
-    // await http.get(Uri.parse('http://192.168.4.1/kontak_on')); 
 
     // Jeda otomatis 3 detik menunggu fuel pump Vario
     await Future.delayed(const Duration(seconds: 3));
