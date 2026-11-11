@@ -1,6 +1,7 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch: # Memungkinkan trigger manual dari tab Actions
   push:
     branches: [ main, master ]
 
@@ -9,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Kode
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Java (Syarat wajib untuk Android)
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -20,21 +21,24 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0' # Versi Flutter terbaru
+          flutter-version: '3.24.0'
 
       - name: Rakit Proyek & Build APK
         run: |
           # 1. Robot membuat kerangka aplikasi baru secara otomatis
           flutter create smart_motor
           
-          # 2. Menimpa file bawaan dengan file main.dart buatan Anda
+          # 2. Menimpa file main.dart dengan file buatan Anda
           cp lib/main.dart smart_motor/lib/main.dart
           
-          # 3. Masuk ke folder aplikasi dan tambahkan paket 'http'
+          # 3. PERBAIKAN: Salin AndroidManifest.xml kustom kamu ke dalam project
+          cp android/app/src/main/AndroidManifest.xml smart_motor/android/app/src/main/AndroidManifest.xml
+          
+          # 4. Masuk ke folder aplikasi dan tambahkan paket 'http'
           cd smart_motor
           flutter pub add http
           
-          # 4. Mulai merakit menjadi APK!
+          # 5. Mulai merakit menjadi APK!
           flutter build apk --release
 
       - name: Upload Hasil APK
