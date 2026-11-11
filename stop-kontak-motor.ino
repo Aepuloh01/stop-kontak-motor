@@ -14,13 +14,33 @@ const int BUZZER_PIN = 14; // D5 (GPIO14) - Indikator Suara
 // Dynamic Status State (false = Mati, true = Hidup)
 bool isEngineOn = false;
 
-// --- FUNGSI NADA BUZZER ---
-void soundBeep(int count, int delayMs) {
-  for (int i = 0; i < count; i++) {
-    digitalWrite(BUZZER_PIN, HIGH);
-    delay(delayMs);
-    digitalWrite(BUZZER_PIN, LOW);
-    if (i < count - 1) delay(delayMs);
+// --- FUNGSI NADA KEYLESS PABRIKAN (OEM CHIRP SOUND) ---
+
+// 1. Suara "tit-tit" tajam khas Honda/Yamaha saat ENGINE START (Kontak ON / Unlock)
+void soundKeylessOn() {
+  tone(BUZZER_PIN, 2900); // Frekuensi 2900 Hz (Nada tinggi renyah)
+  delay(45);              // Pulsa pendek 45 milidetik
+  noTone(BUZZER_PIN);
+  delay(35);              // Jeda antar tit
+  tone(BUZZER_PIN, 3100); // Nada kedua sedikit lebih tinggi
+  delay(45);
+  noTone(BUZZER_PIN);
+}
+
+// 2. Suara "tit" tunggal tegas saat ENGINE STOP (Kontak OFF / Lock)
+void soundKeylessOff() {
+  tone(BUZZER_PIN, 2400); // Frekuensi 2400 Hz (Nada agak berat)
+  delay(75);              // Pulsa 75 milidetik
+  noTone(BUZZER_PIN);
+}
+
+// 3. Suara Answer-Back cepat 3x saat NodeMCU / Sistem Keyless baru menyala
+void soundKeylessBoot() {
+  for (int i = 0; i < 3; i++) {
+    tone(BUZZER_PIN, 3000);
+    delay(35);
+    noTone(BUZZER_PIN);
+    if (i < 2) delay(30);
   }
 }
 
@@ -53,42 +73,42 @@ String buildHtmlPage(String statusText, bool isOn) {
   return page;
 }
 
-void setup() {
+// --- HANDLER URL ENGINE START ---
+void handleOn() {
   pinMode(RELAY_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW); // Relay ON (Active LOW)
+  isEngineOn = true;
+  soundKeylessOn();             // Bunyi "tit-tit" keyless ON
+  server.send(200, "text/html; charset=utf-8", buildHtmlPage("🟢 ENGINE RUNNING", true));
+}
 
-  // Relay Active-LOW (HIGH = OFF, LOW = ON)
-  digitalWrite(RELAY_PIN, HIGH); 
-  digitalWrite(BUZZER_PIN, LOW);
+// --- HANDLER URL ENGINE STOP ---
+void handleOff() {
+  pinMode(RELAY_PIN, INPUT);    // Mode INPUT memutus arus 5V (Lampu Hijau Relay PASTI MATI)
+  isEngineOn = false;
+  soundKeylessOff();            // Bunyi "tit" keyless OFF
+  server.send(200, "text/html; charset=utf-8", buildHtmlPage("🔴 ENGINE OFF", false));
+}
+
+void setup() {
+  // Kondisi awal saat booting: Set ke INPUT agar relay mati total
+  pinMode(RELAY_PIN, INPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
 
   // Jalankan WiFi Access Point
   WiFi.softAP(ssid, password);
 
-  // Handler URL Halaman Utama
+  // Router URL
   server.on("/", [](){
     server.send(200, "text/html; charset=utf-8", buildHtmlPage(isEngineOn ? "🟢 ENGINE RUNNING" : "🔴 ENGINE OFF", isEngineOn));
   });
-
-  // Handler URL Menyala (/on)
-  server.on("/on", [](){
-    digitalWrite(RELAY_PIN, LOW); // Relay ON (Active LOW)
-    isEngineOn = true;
-    soundBeep(1, 150);            // Beep 1x panjang
-    server.send(200, "text/html; charset=utf-8", buildHtmlPage("🟢 ENGINE RUNNING", true));
-  });
-
-  // Handler URL Mematikan (/off)
-  server.on("/off", [](){
-    digitalWrite(RELAY_PIN, HIGH); // Relay OFF (Active LOW)
-    isEngineOn = false;
-    soundBeep(2, 80);              // Beep 2x pendek
-    server.send(200, "text/html; charset=utf-8", buildHtmlPage("🔴 ENGINE OFF", false));
-  });
+  server.on("/on", handleOn);
+  server.on("/off", handleOff);
 
   server.begin();
 
   // Indikator Suara saat NodeMCU siap/menyala
-  soundBeep(3, 60); // Beep 3x cepat
+  soundKeylessBoot(); // Bunyi cepat 3x ala answer-back
 }
 
 void loop() {
