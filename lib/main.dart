@@ -32,41 +32,49 @@ class MotorDashboard extends StatefulWidget {
 class _MotorDashboardState extends State<MotorDashboard> {
   String statusSistem = "STANDBY";
   Color warnaStatus = Colors.grey;
-  bool isStarting = false; // Deteksi apakah sedang proses jeda injeksi
+  String detailError = "Belum ada aksi"; // <-- DETEKTIF ERROR
+  bool isStarting = false;
 
-  // Fungsi Kirim Perintah ke NodeMCU
+  // Fungsi Kirim Perintah dengan Penangkap Error Asli
   Future<void> kirimPerintah(String endpoint, String statusSukses, Color warna) async {
+    setState(() {
+      detailError = "Menghubungkan ke 192.168.4.1/$endpoint...";
+    });
+
     try {
       final response = await http
           .get(Uri.parse('http://192.168.4.1/$endpoint'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
         setState(() {
           statusSistem = statusSukses;
           warnaStatus = warna;
+          detailError = "Sukses! Respon 200 OK dari NodeMCU";
+        });
+      } else {
+        setState(() {
+          detailError = "Gagal: Server membalas kode ${response.statusCode}";
         });
       }
     } catch (e) {
+      // INI AKAR MASALAHNYA: Menampilkan teks error asli dari sistem
       setState(() {
         statusSistem = "GAGAL TERHUBUNG";
-        warnaStatus = Colors.orangeAccent;
+        warnaStatus = Colors.redAccent;
+        detailError = "Error: $e"; 
       });
     }
   }
 
-  // Fungsi Khusus Engine Start (Dengan Jeda Injeksi 3 Detik)
   void prosesEngineStart() async {
     setState(() {
       isStarting = true;
       statusSistem = "CHECKING INJECTION...";
-      warnaStatus = Colors.amber; // Warna kuning indikator injeksi
+      warnaStatus = Colors.amber;
     });
 
-    // Jeda otomatis 3 detik menunggu fuel pump Vario
     await Future.delayed(const Duration(seconds: 3));
-
-    // Eksekusi dinamo starter
     await kirimPerintah("on", "ENGINE RUNNING", Colors.greenAccent);
 
     setState(() {
@@ -74,7 +82,6 @@ class _MotorDashboardState extends State<MotorDashboard> {
     });
   }
 
-  // Desain Tombol Utama (Motor)
   Widget tombolMotor({
     required String label,
     required Color warnaGlow,
@@ -110,28 +117,6 @@ class _MotorDashboardState extends State<MotorDashboard> {
     );
   }
 
-  // Desain Tombol Grid (Smart Home)
-  Widget tombolGrid(String iconUrl, String title, IconData icon) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const [
-          BoxShadow(color: Colors.black87, blurRadius: 10, offset: Offset(4, 4)),
-          BoxShadow(color: Colors.white10, blurRadius: 10, offset: Offset(-4, -4)),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 40, color: Colors.blueAccent),
-          const SizedBox(height: 10),
-          Text(title, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,7 +131,7 @@ class _MotorDashboardState extends State<MotorDashboard> {
           padding: const EdgeInsets.all(25.0),
           child: Column(
             children: [
-              // Panel Status
+              // Panel Status Utama
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 decoration: BoxDecoration(
@@ -163,7 +148,23 @@ class _MotorDashboardState extends State<MotorDashboard> {
                   ],
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 10),
+              
+              // KOTAK DETEKTIF ERROR (Menampilkan akar masalah di layar HP)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  "Log: $detailError",
+                  style: const TextStyle(color: Colors.yellowAccent, fontSize: 12, fontFamily: 'monospace'),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const SizedBox(height: 30),
 
               // Tombol Kontrol Motor
               tombolMotor(
@@ -177,33 +178,6 @@ class _MotorDashboardState extends State<MotorDashboard> {
                 label: "ENGINE STOP",
                 warnaGlow: Colors.redAccent,
                 onTap: () => kirimPerintah("off", "ENGINE STOPPED", Colors.redAccent),
-              ),
-              
-              const SizedBox(height: 40),
-              const Divider(color: Colors.white24, thickness: 1),
-              const SizedBox(height: 20),
-              
-              // Judul Menu Tambahan
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text("SMART HOME DEVICES", style: TextStyle(color: Colors.grey, letterSpacing: 2, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(height: 20),
-
-              // Grid Menu Masa Depan
-              Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 20,
-                  mainAxisSpacing: 20,
-                  childAspectRatio: 1.1,
-                  children: [
-                    tombolGrid("lampu", "Lampu Teras", Icons.lightbulb_outline),
-                    tombolGrid("pagar", "Pagar Garasi", Icons.door_sliding_outlined),
-                    tombolGrid("cctv", "CCTV Kamera", Icons.videocam_outlined),
-                    tombolGrid("kipas", "Kipas Angin", Icons.air),
-                  ],
-                ),
               ),
             ],
           ),
