@@ -8,46 +8,31 @@ const char* password = "password123"; // Minimal 8 karakter
 ESP8266WebServer server(80);
 
 // --- PIN HARDWARE ---
-const int RELAY_PIN  = 5;  // D1 (GPIO5) - Relay Kontak Motor
-const int BUZZER_PIN = 14; // D5 (GPIO14) - Indikator Suara
+const int RELAY_KONTAK  = 5;  // D1 (GPIO5)  - Relay 1: Kunci Kontak Motor
+const int RELAY_STARTER = 4;  // D2 (GPIO4)  - Relay 2: Dinamo/ACG Starter
+const int BUZZER_PIN    = 14; // D5 (GPIO14) - Indikator Suara
+
+// --- PENGATURAN WAKTU OTOMATIS (Milidetik) ---
+const int JEDA_FUEL_PUMP = 3000; // 3000 ms = 3 detik tunggu fuel pump naik
+const int DURASI_STARTER = 1000; // 1000 ms = 1 detik durasi starter
 
 // Dynamic Status State (false = Mati, true = Hidup)
 bool isEngineOn = false;
 
-// --- FUNGSI NADA KEYLESS PABRIKAN (OEM CHIRP SOUND) ---
-
-// 1. Suara "tit-tit" tajam khas Honda/Yamaha saat ENGINE START (Kontak ON / Unlock)
-void soundKeylessOn() {
-  tone(BUZZER_PIN, 2900); // Frekuensi 2900 Hz (Nada tinggi renyah)
-  delay(45);              // Pulsa pendek 45 milidetik
-  noTone(BUZZER_PIN);
-  delay(35);              // Jeda antar tit
-  tone(BUZZER_PIN, 3100); // Nada kedua sedikit lebih tinggi
-  delay(45);
-  noTone(BUZZER_PIN);
-}
-
-// 2. Suara "tit" tunggal tegas saat ENGINE STOP (Kontak OFF / Lock)
-void soundKeylessOff() {
-  tone(BUZZER_PIN, 2400); // Frekuensi 2400 Hz (Nada agak berat)
-  delay(75);              // Pulsa 75 milidetik
-  noTone(BUZZER_PIN);
-}
-
-// 3. Suara Answer-Back cepat 3x saat NodeMCU / Sistem Keyless baru menyala
-void soundKeylessBoot() {
-  for (int i = 0; i < 3; i++) {
-    tone(BUZZER_PIN, 3000);
-    delay(35);
-    noTone(BUZZER_PIN);
-    if (i < 2) delay(30);
+// --- FUNGSI NADA BUZZER NYARING (2000 Hz) ---
+void soundBeep(int count, int delayMs) {
+  for (int i = 0; i < count; i++) {
+    tone(BUZZER_PIN, 2000); // Frekuensi 2000 Hz (Paling nyaring di buzzer)
+    delay(delayMs);
+    noTone(BUZZER_PIN);     // Mematikan nada
+    if (i < count - 1) delay(delayMs);
   }
 }
 
 // --- GENERATOR HALAMAN WEB UI (DARK MODE MODERN) ---
 String buildHtmlPage(String statusText, bool isOn) {
   String page = "<!DOCTYPE html><html lang=\"id\"><head>";
-  page += "<meta charset=\"UTF-8\">"; // MEMPERBAIKI KARAKTER ANEH / EMOJI
+  page += "<meta charset=\"UTF-8\">";
   page += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">";
   page += "<title>Smart Vario 125 Keyless</title>";
   page += "<style>";
@@ -73,26 +58,48 @@ String buildHtmlPage(String statusText, bool isOn) {
   return page;
 }
 
-// --- HANDLER URL ENGINE START ---
+// --- HANDLER URL ENGINE START (KONTAK -> JEDA 3 DETIK -> STARTER) ---
 void handleOn() {
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW); // Relay ON (Active LOW)
+  // Cegah starter berputar ulang jika mesin sudah dalam kondisi menyala
+  if (isEngineOn) {
+    server.send(200, "text/html; charset=utf-8", buildHtmlPage("🟢 ENGINE RUNNING", true));
+    return;
+  }
+
+  // 1. Nyalakan Relay 1 (Kunci Kontak ON -> Fuel pump bekerja)
+  pinMode(RELAY_KONTAK, OUTPUT);
+  digitalWrite(RELAY_KONTAK, LOW);
   isEngineOn = true;
-  soundKeylessOn();             // Bunyi "tit-tit" keyless ON
+  soundBeep(1, 150); // Bunyi Beep 1x nyaring (2000 Hz)
+
+  // Kirim respon 200 OK ke HP lebih dulu agar aplikasi tidak loading lama
   server.send(200, "text/html; charset=utf-8", buildHtmlPage("🟢 ENGINE RUNNING", true));
+
+  // 2. Tunggu 3 detik (Fuel pump naik & jarum speedometer kalibrasi)
+  delay(JEDA_FUEL_PUMP);
+
+  // 3. Nyalakan Relay 2 (Starter otomatis menyala 1 detik)
+  pinMode(RELAY_STARTER, OUTPUT);
+  digitalWrite(RELAY_STARTER, LOW);
+  delay(DURASI_STARTER);
+
+  // 4. Matikan Relay 2 (Lepas tombol starter otomatis)
+  pinMode(RELAY_STARTER, INPUT);
 }
 
 // --- HANDLER URL ENGINE STOP ---
 void handleOff() {
-  pinMode(RELAY_PIN, INPUT);    // Mode INPUT memutus arus 5V (Lampu Hijau Relay PASTI MATI)
+  pinMode(RELAY_STARTER, INPUT); // Pastikan Relay Starter mati total
+  pinMode(RELAY_KONTAK, INPUT);  // Matikan Relay Kontak (Mode INPUT memutus arus 5V)
   isEngineOn = false;
-  soundKeylessOff();            // Bunyi "tit" keyless OFF
+  soundBeep(2, 80);              // Bunyi Beep 2x pendek nyaring (2000 Hz)
   server.send(200, "text/html; charset=utf-8", buildHtmlPage("🔴 ENGINE OFF", false));
 }
 
 void setup() {
-  // Kondisi awal saat booting: Set ke INPUT agar relay mati total
-  pinMode(RELAY_PIN, INPUT);
+  // Kondisi awal saat booting: Set ke INPUT agar kedua relay mati total
+  pinMode(RELAY_KONTAK, INPUT);
+  pinMode(RELAY_STARTER, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
 
   // Jalankan WiFi Access Point
@@ -108,7 +115,7 @@ void setup() {
   server.begin();
 
   // Indikator Suara saat NodeMCU siap/menyala
-  soundKeylessBoot(); // Bunyi cepat 3x ala answer-back
+  soundBeep(3, 60); // Beep 3x cepat nyaring (2000 Hz)
 }
 
 void loop() {
