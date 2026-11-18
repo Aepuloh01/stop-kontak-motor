@@ -21,7 +21,7 @@ const int DURASI_STARTER = 1000;  // 1 detik durasi starter
 const int DURASI_SIRINE  = 30000; // 30 detik batas maksimal sirine berbunyi
 
 // Ubah ke false jika memakai modul sensor getar SW-420 yang outputnya HIGH saat bergetar
-const bool ALARM_SENSOR_ACTIVE_LOW = true; 
+const bool ALARM_SENSOR_ACTIVE_LOW = false; 
 
 // --- STATUS SISTEM ---
 bool isEngineOn       = false;
