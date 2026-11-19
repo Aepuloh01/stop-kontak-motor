@@ -8,12 +8,13 @@ const char* password = "Snowboy14@"; // Minimal 8 karakter
 ESP8266WebServer server(80);
 
 // --- PIN HARDWARE ---
-const int RELAY_KONTAK   = 5;  // D1 (GPIO5)  - Relay 1: Kunci Kontak
-const int RELAY_STARTER  = 4;  // D2 (GPIO4)  - Relay 2: Starter Otomatis
-const int RELAY_SEIN     = 13; // D7 (GPIO13) - Relay 3: Lampu Sein Depan & Belakang
-const int BUZZER_PIN     = 14; // D5 (GPIO14) - Buzzer Suara Nyaring
-const int SENSOR_ALARM   = 12; // D6 (GPIO12) - Sensor Getar / Anti-Maling
-const int SENSOR_JOK_PIN = 0;  // D3 (GPIO0)  - Sensor Buka Jok / Kunci Setang
+const int RELAY_KONTAK     = 5;  // D1 (GPIO5)  - Relay 1: Kunci Kontak
+const int RELAY_STARTER    = 4;  // D2 (GPIO4)  - Relay 2: Starter Otomatis
+const int RELAY_SEIN       = 13; // D7 (GPIO13) - Relay 3: Lampu Sein Depan & Belakang
+const int BUZZER_PIN       = 14; // D5 (GPIO14) - Buzzer Suara Nyaring
+const int SENSOR_ALARM     = 12; // D6 (GPIO12) - Sensor Getar SW-420 / Anti-Maling
+const int SENSOR_JOK_PIN   = 0;  // D3 (GPIO0)  - Limit Switch 1: Buka / Tutup Jok
+const int SENSOR_STANG_PIN = 2;  // D4 (GPIO2)  - Limit Switch 2: Kunci Stang
 
 // --- PENGATURAN WAKTU (Milidetik) ---
 const int JEDA_FUEL_PUMP = 3000;  // 3 detik tunggu fuel pump naik
@@ -25,16 +26,19 @@ const bool ALARM_SENSOR_ACTIVE_LOW = true;
 
 // --- STATUS SISTEM ---
 bool isEngineOn       = false;
-bool isAlarmArmed     = false; // Default NONAKTIF agar bebas merapikan motor saat parkir
+bool isAlarmArmed     = false;
 bool isAlarmTriggered = false;
 
 unsigned long sirenStartTime = 0;
 unsigned long sirenToneTimer = 0;
 bool sirenState              = false;
 
-// Variabel pembacaan sensor jok / kunci setang (Edge Detection)
-int lastJokState            = HIGH;
-unsigned long lastJokMillis = 0;
+// Variabel pembacaan sensor jok & kunci stang (Deteksi 2 Arah: Tekan & Lepas)
+int lastJokState              = HIGH;
+unsigned long lastJokMillis   = 0;
+
+int lastStangState            = HIGH;
+unsigned long lastStangMillis = 0;
 
 // --- HELPER RELAY ACTIVE-LOW (Aman untuk 5V VV vs 3.3V NodeMCU) ---
 void relayOn(int pin) {
@@ -59,17 +63,26 @@ void signalSeinAndBeep(int count, int durationMs) {
   }
 }
 
-// --- FUNGSI KEDIP SEIN SAJA (Untuk Sensor Jok / Kunci Setang) ---
-void blinkSeinOnly(int count, int durationMs) {
-  for (int i = 0; i < count; i++) {
-    relayOn(RELAY_SEIN);
-    delay(durationMs);
-    relayOff(RELAY_SEIN);
-    if (i < count - 1) delay(durationMs);
+// --- FUNGSI PENGECEKAN LIMIT SWITCH (JOK & KUNCI STANG) ---
+void checkLimitSwitch(int pin, int &lastState, unsigned long &lastMillis, unsigned long currentMillis) {
+  int currentState = digitalRead(pin);
+  if (currentState != lastState && (currentMillis - lastMillis > 350)) {
+    lastState  = currentState;
+    lastMillis = currentMillis;
+
+    if (isAlarmArmed && !isEngineOn) {
+      // Alarm AKTIF: jok dicongkel atau stang digerakkan -> SIRINE + SEIN NYALA!
+      isAlarmTriggered = true;
+      sirenStartTime   = millis();
+    } else if (!isAlarmArmed && !isEngineOn && !isAlarmTriggered) {
+      // Alarm NONAKTIF: buka/tutup jok atau kunci stang -> Beep 1 detik + Sein nyala 1 detik
+      signalSeinAndBeep(1, 1000);
+      lastMillis = millis(); // Reset jeda pantulan setelah bunyi 1 detik selesai
+    }
   }
 }
 
-// --- GENERATOR HALAMAN WEB UI (DARK MODE + MENU ALARM MANUAL) ---
+// --- GENERATOR HALAMAN WEB UI ---
 String buildHtmlPage() {
   String engineStatus = isEngineOn ? "🟢 ENGINE RUNNING" : "🔴 ENGINE OFF";
   String alarmStatus  = isAlarmTriggered ? "🚨 MALING / ALARM BUNYI!" 
@@ -127,7 +140,6 @@ String buildHtmlPage() {
 
 // --- HANDLER URL ENGINE START ---
 void handleOn() {
-  // Otomatis nonaktifkan alarm saat pemilik menyalakan mesin
   isAlarmArmed     = false;
   isAlarmTriggered = false;
   noTone(BUZZER_PIN);
@@ -137,26 +149,20 @@ void handleOn() {
     return;
   }
 
-  // 1. Nyalakan Relay 1 (Kunci Kontak ON) + Sein kedip 2x & Beep 2x
   relayOn(RELAY_KONTAK);
   isEngineOn = true;
   signalSeinAndBeep(2, 90);
 
-  // Kirim respon cepat ke aplikasi HP sebelum jeda fuel pump
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
 
-  // 2. Jeda 3 detik Fuel Pump naik
   delay(JEDA_FUEL_PUMP);
 
-  // 3. Nyalakan Relay 2 (Starter otomatis 1 detik)
   relayOn(RELAY_STARTER);
   delay(DURASI_STARTER);
-
-  // 4. Matikan Relay 2
   relayOff(RELAY_STARTER);
 }
 
-// --- HANDLER URL ENGINE STOP (TANPA AUTO-ALARM) ---
+// --- HANDLER URL ENGINE STOP ---
 void handleOff() {
   relayOff(RELAY_STARTER);
   relayOff(RELAY_KONTAK);
@@ -164,32 +170,40 @@ void handleOff() {
   isAlarmTriggered = false;
   noTone(BUZZER_PIN);
 
-  // Sein kedip 2x & Beep 2x tanda mesin mati (Alarm tetap OFF agar bebas parkir/buka jok)
+  // Sinkronkan posisi jok & stang saat mesin dimatikan
+  lastJokState   = digitalRead(SENSOR_JOK_PIN);
+  lastStangState = digitalRead(SENSOR_STANG_PIN);
+
   signalSeinAndBeep(2, 80);
 
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
 }
 
-// --- HANDLER AKTIFKAN ALARM MANUAL DARI APLIKASI ---
+// --- HANDLER AKTIFKAN ALARM MANUAL ---
 void handleAlarmOn() {
   if (!isEngineOn) {
-    // Sein menyala 1x + Beep 1x tanda alarm terkunci
     signalSeinAndBeep(1, 180);
-    // Jeda 0,5 detik agar getaran buzzer/relay tidak langsung memicu sensor getar
-    delay(500);
+    delay(500); // Jeda stabilisasi getaran buzzer/relay
+    
+    // Kunci posisi jok & stang saat ini sebagai patokan keamanan
+    lastJokState     = digitalRead(SENSOR_JOK_PIN);
+    lastStangState   = digitalRead(SENSOR_STANG_PIN);
     isAlarmArmed     = true;
     isAlarmTriggered = false;
   }
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
 }
 
-// --- HANDLER MATIKAN ALARM MANUAL DARI APLIKASI ---
+// --- HANDLER MATIKAN ALARM MANUAL ---
 void handleAlarmOff() {
   isAlarmArmed     = false;
   isAlarmTriggered = false;
   noTone(BUZZER_PIN);
   relayOff(RELAY_SEIN);
-  // Sein kedip 2x + Beep 2x tanda alarm dibuka
+
+  lastJokState   = digitalRead(SENSOR_JOK_PIN);
+  lastStangState = digitalRead(SENSOR_STANG_PIN);
+
   signalSeinAndBeep(2, 80);
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
 }
@@ -202,25 +216,24 @@ void handlePanic() {
 }
 
 void setup() {
-  // Pastikan semua relay mati saat pertama kali dialiri listrik
   relayOff(RELAY_KONTAK);
   relayOff(RELAY_STARTER);
   relayOff(RELAY_SEIN);
   pinMode(BUZZER_PIN, OUTPUT);
 
-  // Setup pin sensor
   if (ALARM_SENSOR_ACTIVE_LOW) {
     pinMode(SENSOR_ALARM, INPUT_PULLUP);
   } else {
     pinMode(SENSOR_ALARM, INPUT);
   }
-  pinMode(SENSOR_JOK_PIN, INPUT_PULLUP);
-  lastJokState = digitalRead(SENSOR_JOK_PIN);
 
-  // Jalankan WiFi Access Point
+  pinMode(SENSOR_JOK_PIN, INPUT_PULLUP);
+  pinMode(SENSOR_STANG_PIN, INPUT_PULLUP);
+  lastJokState   = digitalRead(SENSOR_JOK_PIN);
+  lastStangState = digitalRead(SENSOR_STANG_PIN);
+
   WiFi.softAP(ssid, password);
 
-  // Router URL
   server.on("/", [](){
     server.send(200, "text/html; charset=utf-8", buildHtmlPage());
   });
@@ -232,7 +245,6 @@ void setup() {
 
   server.begin();
 
-  // Indikator saat NodeMCU baru menyala: Sein kedip 3x + Beep 3x
   signalSeinAndBeep(3, 70);
 }
 
@@ -240,26 +252,11 @@ void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
 
-  // 1. DETEKSI SENSOR BUKA JOK / KUNCI SETANG (Pin D3)
-  int currentJokState = digitalRead(SENSOR_JOK_PIN);
-  if (currentJokState != lastJokState && (currentMillis - lastJokMillis > 150)) {
-    lastJokMillis = currentMillis;
-    lastJokState  = currentJokState;
+  // 1. CEK LIMIT SWITCH JOK (Pin D3) & KUNCI STANG (Pin D4)
+  checkLimitSwitch(SENSOR_JOK_PIN, lastJokState, lastJokMillis, currentMillis);
+  checkLimitSwitch(SENSOR_STANG_PIN, lastStangState, lastStangMillis, currentMillis);
 
-    // Trigger saat sakelar terhubung ke GND (LOW)
-    if (currentJokState == LOW) {
-      if (isAlarmArmed && !isEngineOn) {
-        // Jika alarm sudah dikunci tapi jok dibuka paksa -> bunyikan sirine!
-        isAlarmTriggered = true;
-        sirenStartTime   = currentMillis;
-      } else if (!isAlarmTriggered) {
-        // Jika alarm NONAKTIF (sedang parkir santai) -> Sein kedip 1x saja tanpa berisik
-        blinkSeinOnly(1, 250);
-      }
-    }
-  }
-
-  // 2. DETEKSI SENSOR ANTI-MALING / GETAR (Pin D6 - Hanya saat alarm AKTIF)
+  // 2. DETEKSI SENSOR GETAR SW-420 (Pin D6 - Hanya saat alarm AKTIF)
   if (isAlarmArmed && !isEngineOn && !isAlarmTriggered) {
     int alarmSensorVal = digitalRead(SENSOR_ALARM);
     bool triggered = ALARM_SENSOR_ACTIVE_LOW ? (alarmSensorVal == LOW) : (alarmSensorVal == HIGH);
@@ -273,12 +270,10 @@ void loop() {
   // 3. EKSEKUSI SIRINE + LAMPU SEIN BERKEDIP BERSAMAAN
   if (isAlarmTriggered) {
     if (currentMillis - sirenStartTime >= DURASI_SIRINE) {
-      // Matikan otomatis setelah 30 detik agar aki aman
       isAlarmTriggered = false;
       noTone(BUZZER_PIN);
       relayOff(RELAY_SEIN);
     } else {
-      // Kedipkan sein dan ubah nada sirine setiap 150 ms
       if (currentMillis - sirenToneTimer >= 150) {
         sirenToneTimer = currentMillis;
         sirenState     = !sirenState;
