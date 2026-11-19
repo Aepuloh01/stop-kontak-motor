@@ -20,8 +20,8 @@ const int JEDA_FUEL_PUMP = 3000;  // 3 detik tunggu fuel pump naik
 const int DURASI_STARTER = 1000;  // 1 detik durasi starter
 const int DURASI_SIRINE  = 30000; // 30 detik batas maksimal sirine berbunyi
 
-// Ubah ke false jika memakai modul sensor getar SW-420 yang outputnya HIGH saat bergetar
-const bool ALARM_SENSOR_ACTIVE_LOW = false; 
+// Set ke true untuk modul sensor getar SW-420 (N-072) yang pin DO-nya turun ke LOW saat bergetar
+const bool ALARM_SENSOR_ACTIVE_LOW = true; 
 
 // --- STATUS SISTEM ---
 bool isEngineOn       = false;
@@ -164,7 +164,7 @@ void handleOff() {
   isAlarmTriggered = false;
   noTone(BUZZER_PIN);
 
-  // Sein kedip 1x panjang & Beep 2x tanda mesin mati (Alarm tetap OFF agar bebas parkir/buka jok)
+  // Sein kedip 2x & Beep 2x tanda mesin mati (Alarm tetap OFF agar bebas parkir/buka jok)
   signalSeinAndBeep(2, 80);
 
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
@@ -173,10 +173,12 @@ void handleOff() {
 // --- HANDLER AKTIFKAN ALARM MANUAL DARI APLIKASI ---
 void handleAlarmOn() {
   if (!isEngineOn) {
-    isAlarmArmed     = true;
-    isAlarmTriggered = false;
     // Sein menyala 1x + Beep 1x tanda alarm terkunci
     signalSeinAndBeep(1, 180);
+    // Jeda 0,5 detik agar getaran buzzer/relay tidak langsung memicu sensor getar
+    delay(500);
+    isAlarmArmed     = true;
+    isAlarmTriggered = false;
   }
   server.send(200, "text/html; charset=utf-8", buildHtmlPage());
 }
