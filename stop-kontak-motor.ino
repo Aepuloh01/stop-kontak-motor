@@ -1,11 +1,20 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 
-// --- KONFIGURASI WIFI AP ---
-const char* ssid     = "SMART_VARIO_125"; 
-const char* password = "Snowboy14@"; // Minimal 8 karakter
+// --- KONFIGURASI WIFI AP & KEAMANAN AKSES (BISA DIUBAH SESUAI KEINGINAN) ---
+const char* ssid          = "SMART_VARIO_125"; 
+const char* password      = "Snowboy14@";        // Minimal 8 karakter
+const bool  HIDDEN_SSID   = false;               // Ubah ke 'true' jika ingin nama Wi-Fi disembunyikan
+const String SECRET_TOKEN = "BeatK81_Rahasia99"; // Kunci rahasia wajib dari aplikasi HP
 
-ESP8266WebServer server(80);
+// Alamat IP Custom NodeMCU (bebas diganti, misalnya 10.20.30.1 atau 172.16.88.1)
+IPAddress local_IP(10, 20, 30, 1);
+IPAddress gateway(10, 20, 30, 1);
+IPAddress subnet(255, 255, 255, 0);
+
+// Port Khusus (selain port 80 agar tidak bisa dibuka sembarangan lewat browser biasa)
+const int SERVER_PORT = 8745;
+ESP8266WebServer server(SERVER_PORT);
 
 // --- PIN HARDWARE ---
 const int RELAY_KONTAK     = 5;  // D1 (GPIO5)  - Relay 1: Kunci Kontak
@@ -50,6 +59,22 @@ unsigned long lastJokMillis   = 0;
 int lastStangState            = LOW;
 unsigned long lastStangMillis = 0;
 
+// --- PENGECEKAN KEAMANAN TOKEN APLIKASI ---
+bool isAuthorized() {
+  // 1. Cek token dari parameter URL (?token=...)
+  if (server.hasArg("token") && server.arg("token") == SECRET_TOKEN) {
+    return true;
+  }
+  // 2. Cek token dari HTTP Header (X-Auth-Token)
+  if (server.hasHeader("X-Auth-Token") && server.header("X-Auth-Token") == SECRET_TOKEN) {
+    return true;
+  }
+  
+  // Tolak akses jika tidak membawa token yang valid
+  server.send(403, "text/plain", "403 Forbidden: Akses Ditolak!");
+  return false;
+}
+
 // --- HELPER RELAY ACTIVE-LOW (Aman untuk 5V VV vs 3.3V NodeMCU) ---
 void relayOn(int pin) {
   pinMode(pin, OUTPUT);
@@ -73,9 +98,9 @@ void signalSeinAndBeep(int count, int durationMs) {
   }
 }
 
-// --- HELPER REDIRECT KE HALAMAN UTAMA ---
+// --- HELPER REDIRECT KE HALAMAN UTAMA DENGAN TOKEN ---
 void redirectHome() {
-  server.sendHeader("Location", "/");
+  server.sendHeader("Location", "/?token=" + SECRET_TOKEN);
   server.send(303);
 }
 
@@ -103,6 +128,7 @@ String buildHtmlPage() {
   String engineStatus = isEngineOn ? "🟢 ENGINE RUNNING" : "🔴 ENGINE OFF";
   String alarmStatus  = isAlarmTriggered ? "🚨 MALING / ALARM BUNYI!" 
                       : (isAlarmArmed ? "🛡️ ALARM AKTIF (TERKUNCI)" : "🔓 ALARM NONAKTIF");
+  String tokenQuery   = "?token=" + SECRET_TOKEN;
 
   String page = "<!DOCTYPE html><html lang=\"id\"><head>";
   page += "<meta charset=\"UTF-8\">";
@@ -138,17 +164,17 @@ String buildHtmlPage() {
   
   page += "<div class=\"divider\"></div>";
   page += "<div class=\"section-label\">Kontrol Mesin</div>";
-  page += "<a href=\"/on\" class=\"btn btn-start\">ENGINE START</a>";
-  page += "<a href=\"/off\" class=\"btn btn-stop\">ENGINE STOP</a>";
+  page += "<a href=\"/on" + tokenQuery + "\" class=\"btn btn-start\">ENGINE START</a>";
+  page += "<a href=\"/off" + tokenQuery + "\" class=\"btn btn-stop\">ENGINE STOP</a>";
   
   page += "<div class=\"divider\"></div>";
   page += "<div class=\"section-label\">Menu Keamanan & Parkir</div>";
   if (isAlarmArmed || isAlarmTriggered) {
-    page += "<a href=\"/alarm_off\" class=\"btn btn-alarm-off\">MATIKAN ALARM</a>";
+    page += "<a href=\"/alarm_off" + tokenQuery + "\" class=\"btn btn-alarm-off\">MATIKAN ALARM</a>";
   } else {
-    page += "<a href=\"/alarm_on\" class=\"btn btn-alarm-on\">AKTIFKAN ALARM</a>";
+    page += "<a href=\"/alarm_on" + tokenQuery + "\" class=\"btn btn-alarm-on\">AKTIFKAN ALARM</a>";
   }
-  page += "<a href=\"/panic\" class=\"btn btn-panic\">CARI MOTOR / TES SIRINE</a>";
+  page += "<a href=\"/panic" + tokenQuery + "\" class=\"btn btn-panic\">CARI MOTOR / TES SIRINE</a>";
   
   page += "</div></body></html>";
   return page;
@@ -156,6 +182,8 @@ String buildHtmlPage() {
 
 // --- HANDLER URL ENGINE START ---
 void handleOn() {
+  if (!isAuthorized()) return;
+
   isAlarmArmed        = false;
   isAlarmTriggered    = false;
   vibrationCount      = 0;
@@ -182,6 +210,8 @@ void handleOn() {
 
 // --- HANDLER URL ENGINE STOP ---
 void handleOff() {
+  if (!isAuthorized()) return;
+
   relayOff(RELAY_STARTER);
   relayOff(RELAY_KONTAK);
   isEngineOn          = false;
@@ -199,6 +229,8 @@ void handleOff() {
 
 // --- HANDLER AKTIFKAN ALARM MANUAL ---
 void handleAlarmOn() {
+  if (!isAuthorized()) return;
+
   if (!isEngineOn) {
     signalSeinAndBeep(1, 180);
     
@@ -216,6 +248,8 @@ void handleAlarmOn() {
 
 // --- HANDLER MATIKAN ALARM MANUAL ---
 void handleAlarmOff() {
+  if (!isAuthorized()) return;
+
   isAlarmArmed        = false;
   isAlarmTriggered    = false;
   vibrationCount      = 0;
@@ -232,6 +266,8 @@ void handleAlarmOff() {
 
 // --- HANDLER CARI MOTOR / TES SIRINE ---
 void handlePanic() {
+  if (!isAuthorized()) return;
+
   isAlarmTriggered = true;
   sirenStartTime   = millis();
   redirectHome();
@@ -254,9 +290,17 @@ void setup() {
   lastJokState   = digitalRead(SENSOR_JOK_PIN);
   lastStangState = digitalRead(SENSOR_STANG_PIN);
 
-  WiFi.softAP(ssid, password);
+  // Konfigurasi Wi-Fi Access Point dengan IP Custom & Opsi Hidden SSID
+  WiFi.mode(WIFI_AP);
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+  WiFi.softAP(ssid, password, 1, HIDDEN_SSID);
+
+  // Izinkan pembacaan HTTP Header khusus dari aplikasi HP
+  const char* headerkeys[] = {"X-Auth-Token"};
+  server.collectHeaders(headerkeys, 1);
 
   server.on("/", [](){
+    if (!isAuthorized()) return;
     server.send(200, "text/html; charset=utf-8", buildHtmlPage());
   });
   server.on("/on", handleOn);
