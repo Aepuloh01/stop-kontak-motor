@@ -2,7 +2,7 @@
 #include <ESP8266WebServer.h>
 
 // --- KONFIGURASI WIFI AP ---
-const char* ssid = "SMART_VARIO_125"; 
+const char* ssid     = "SMART_VARIO_125"; 
 const char* password = "Snowboy14@"; // Minimal 8 karakter
 
 ESP8266WebServer server(80);
@@ -13,20 +13,18 @@ const int RELAY_STARTER    = 4;  // D2 (GPIO4)  - Relay 2: Starter Otomatis
 const int RELAY_SEIN       = 13; // D7 (GPIO13) - Relay 3: Lampu Sein Depan & Belakang
 const int BUZZER_PIN       = 14; // D5 (GPIO14) - Buzzer Suara Nyaring
 const int SENSOR_ALARM     = 12; // D6 (GPIO12) - Sensor Getar SW-420 / Anti-Maling
-const int SENSOR_JOK_PIN   = 3;  // Pin RX (GPIO3) - Bebas gagal booting meski jok terbuka/tertutup
-const int SENSOR_STANG_PIN = 16; // D0 (GPIO16) - Bebas gagal booting
+const int SENSOR_JOK_PIN   = 3;  // RX (GPIO3)  - Limit Switch 1: Jok (Bebas gagal booting)
+const int SENSOR_STANG_PIN = 16; // D0 (GPIO16) - Limit Switch 2: Kunci Stang (Bebas gagal booting)
 
-// 2. Ubah di dalam void setup() (ganti INPUT_PULLUP menjadi INPUT_PULLDOWN_16):
-pinMode(SENSOR_STANG_PIN, INPUT_PULLDOWN_16);
 // --- PENGATURAN WAKTU & SENSITIVITAS (Milidetik) ---
-const int JEDA_FUEL_PUMP          = 3000;  // 3 detik tunggu fuel pump naik
-const int DURASI_STARTER          = 1000;  // 1 detik durasi starter
-const int DURASI_SIRINE           = 30000; // 30 detik batas maksimal sirine berbunyi
+const int JEDA_FUEL_PUMP           = 3000;  // 3 detik tunggu fuel pump naik
+const int DURASI_STARTER           = 1000;  // 1 detik durasi starter
+const int DURASI_SIRINE            = 30000; // 30 detik batas maksimal sirine berbunyi
 const unsigned long JEDA_SIAP_ALARM  = 2500; // 2,5 detik jeda aman setelah tombol Aktifkan Alarm ditekan
-const int JUMLAH_GETAR_PICU       = 3;     // Minimal 3x getaran/ketukan untuk memicu alarm
+const int JUMLAH_GETAR_PICU        = 3;     // Minimal 3x getaran/ketukan untuk memicu alarm
 const unsigned long RENTANG_GETAR_MS = 1500; // 3x getaran harus terjadi dalam rentang 1,5 detik
 
-// Disesuaikan dengan modul SW-420 milikmu (LED menyala saat diam = LOW, LED padam saat diketuk = HIGH)
+// Disesuaikan dengan modul SW-420 (LED menyala saat diam = LOW, LED padam saat diketuk = HIGH)
 const bool ALARM_SENSOR_ACTIVE_LOW = false; 
 
 // --- STATUS SISTEM ---
@@ -49,7 +47,7 @@ bool lastSensorTriggered         = false;
 int lastJokState              = HIGH;
 unsigned long lastJokMillis   = 0;
 
-int lastStangState            = HIGH;
+int lastStangState            = LOW;
 unsigned long lastStangMillis = 0;
 
 // --- HELPER RELAY ACTIVE-LOW (Aman untuk 5V VV vs 3.3V NodeMCU) ---
@@ -252,7 +250,7 @@ void setup() {
   }
 
   pinMode(SENSOR_JOK_PIN, INPUT_PULLUP);
-  pinMode(SENSOR_STANG_PIN, INPUT_PULLUP);
+  pinMode(SENSOR_STANG_PIN, INPUT_PULLDOWN_16);
   lastJokState   = digitalRead(SENSOR_JOK_PIN);
   lastStangState = digitalRead(SENSOR_STANG_PIN);
 
@@ -276,7 +274,7 @@ void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
 
-  // 1. CEK LIMIT SWITCH JOK (Pin D3) & KUNCI STANG (Pin D4)
+  // 1. CEK LIMIT SWITCH JOK (Pin RX) & KUNCI STANG (Pin D0)
   checkLimitSwitch(SENSOR_JOK_PIN, lastJokState, lastJokMillis, currentMillis);
   checkLimitSwitch(SENSOR_STANG_PIN, lastStangState, lastStangMillis, currentMillis);
 
