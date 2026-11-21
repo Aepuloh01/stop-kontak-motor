@@ -13,8 +13,8 @@ const int RELAY_STARTER    = 4;  // D2 (GPIO4)  - Relay 2: Starter Otomatis
 const int RELAY_SEIN       = 13; // D7 (GPIO13) - Relay 3: Lampu Sein Depan & Belakang
 const int BUZZER_PIN       = 14; // D5 (GPIO14) - Buzzer Suara Nyaring
 const int SENSOR_ALARM     = 12; // D6 (GPIO12) - Sensor Getar SW-420 / Anti-Maling
-const int SENSOR_JOK_PIN   = 0;  // D3 (GPIO0)  - Limit Switch 1: Buka / Tutup Jok
-const int SENSOR_STANG_PIN = 2;  // D4 (GPIO2)  - Limit Switch 2: Kunci Stang
+const int SENSOR_JOK_PIN   = 3;  // Pin RX (GPIO3) - Bebas gagal booting meski jok terbuka/tertutup
+const int SENSOR_STANG_PIN = 2;  // D4 (GPIO2) - Limit Switch 2: Kunci Stang (pakai kaki NC)
 
 // --- PENGATURAN WAKTU & SENSITIVITAS (Milidetik) ---
 const int JEDA_FUEL_PUMP          = 3000;  // 3 detik tunggu fuel pump naik
