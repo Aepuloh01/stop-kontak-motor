@@ -16,13 +16,16 @@ const int SENSOR_ALARM     = 12; // D6 (GPIO12) - Sensor Getar SW-420 / Anti-Mal
 const int SENSOR_JOK_PIN   = 0;  // D3 (GPIO0)  - Limit Switch 1: Buka / Tutup Jok
 const int SENSOR_STANG_PIN = 2;  // D4 (GPIO2)  - Limit Switch 2: Kunci Stang
 
-// --- PENGATURAN WAKTU (Milidetik) ---
-const int JEDA_FUEL_PUMP = 3000;  // 3 detik tunggu fuel pump naik
-const int DURASI_STARTER = 1000;  // 1 detik durasi starter
-const int DURASI_SIRINE  = 30000; // 30 detik batas maksimal sirine berbunyi
+// --- PENGATURAN WAKTU & SENSITIVITAS (Milidetik) ---
+const int JEDA_FUEL_PUMP          = 3000;  // 3 detik tunggu fuel pump naik
+const int DURASI_STARTER          = 1000;  // 1 detik durasi starter
+const int DURASI_SIRINE           = 30000; // 30 detik batas maksimal sirine berbunyi
+const unsigned long JEDA_SIAP_ALARM  = 2500; // 2,5 detik jeda aman setelah tombol Aktifkan Alarm ditekan
+const int JUMLAH_GETAR_PICU       = 3;     // Minimal 3x getaran/ketukan untuk memicu alarm
+const unsigned long RENTANG_GETAR_MS = 1500; // 3x getaran harus terjadi dalam rentang 1,5 detik
 
-// Set ke true untuk modul sensor getar SW-420 (N-072) yang pin DO-nya turun ke LOW saat bergetar
-const bool ALARM_SENSOR_ACTIVE_LOW = true; 
+// Disesuaikan dengan modul SW-420 milikmu (LED menyala saat diam = LOW, LED padam saat diketuk = HIGH)
+const bool ALARM_SENSOR_ACTIVE_LOW = false; 
 
 // --- STATUS SISTEM ---
 bool isEngineOn       = false;
@@ -32,6 +35,13 @@ bool isAlarmTriggered = false;
 unsigned long sirenStartTime = 0;
 unsigned long sirenToneTimer = 0;
 bool sirenState              = false;
+
+// Variabel filter sensor getar SW-420
+unsigned long alarmArmedTime     = 0;
+int vibrationCount               = 0;
+unsigned long firstVibrationTime = 0;
+unsigned long lastVibrationPulse = 0;
+bool lastSensorTriggered         = false;
 
 // Variabel pembacaan sensor jok & kunci stang (Deteksi 2 Arah: Tekan & Lepas)
 int lastJokState              = HIGH;
@@ -63,6 +73,12 @@ void signalSeinAndBeep(int count, int durationMs) {
   }
 }
 
+// --- HELPER REDIRECT KE HALAMAN UTAMA ---
+void redirectHome() {
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
 // --- FUNGSI PENGECEKAN LIMIT SWITCH (JOK & KUNCI STANG) ---
 void checkLimitSwitch(int pin, int &lastState, unsigned long &lastMillis, unsigned long currentMillis) {
   int currentState = digitalRead(pin);
@@ -91,7 +107,7 @@ String buildHtmlPage() {
   String page = "<!DOCTYPE html><html lang=\"id\"><head>";
   page += "<meta charset=\"UTF-8\">";
   page += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">";
-  page += "<title>Smart Vario 125 Keyless</title>";
+  page += "<title>Smart Beat Street Keyless</title>";
   page += "<style>";
   page += "body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #ffffff; text-align: center; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; }";
   page += ".card { background: #1e1e1e; border-radius: 20px; padding: 25px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 100%; max-width: 360px; border: 1px solid #2a2a2a; }";
@@ -114,7 +130,7 @@ String buildHtmlPage() {
   page += ".btn-panic { background: linear-gradient(135deg, #e65100, #ff9800); color: white; font-size: 13px; padding: 12px 0; }";
   page += "</style></head><body>";
   page += "<div class=\"card\">";
-  page += "<h1>SMART VARIO 125</h1>";
+  page += "<h1>SMART BEAT STREET</h1>";
   page += "<h3>Keyless & Security Control</h3>";
   
   page += "<div class=\"status-box " + String(isEngineOn ? "status-on" : "status-off") + "\">" + engineStatus + "</div>";
@@ -140,12 +156,14 @@ String buildHtmlPage() {
 
 // --- HANDLER URL ENGINE START ---
 void handleOn() {
-  isAlarmArmed     = false;
-  isAlarmTriggered = false;
+  isAlarmArmed        = false;
+  isAlarmTriggered    = false;
+  vibrationCount      = 0;
+  lastSensorTriggered = false;
   noTone(BUZZER_PIN);
 
   if (isEngineOn) {
-    server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+    redirectHome();
     return;
   }
 
@@ -153,7 +171,7 @@ void handleOn() {
   isEngineOn = true;
   signalSeinAndBeep(2, 90);
 
-  server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+  redirectHome();
 
   delay(JEDA_FUEL_PUMP);
 
@@ -166,38 +184,42 @@ void handleOn() {
 void handleOff() {
   relayOff(RELAY_STARTER);
   relayOff(RELAY_KONTAK);
-  isEngineOn       = false;
-  isAlarmTriggered = false;
+  isEngineOn          = false;
+  isAlarmTriggered    = false;
+  vibrationCount      = 0;
+  lastSensorTriggered = false;
   noTone(BUZZER_PIN);
 
-  // Sinkronkan posisi jok & stang saat mesin dimatikan
   lastJokState   = digitalRead(SENSOR_JOK_PIN);
   lastStangState = digitalRead(SENSOR_STANG_PIN);
 
   signalSeinAndBeep(2, 80);
-
-  server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+  redirectHome();
 }
 
 // --- HANDLER AKTIFKAN ALARM MANUAL ---
 void handleAlarmOn() {
   if (!isEngineOn) {
     signalSeinAndBeep(1, 180);
-    delay(500); // Jeda stabilisasi getaran buzzer/relay
     
-    // Kunci posisi jok & stang saat ini sebagai patokan keamanan
-    lastJokState     = digitalRead(SENSOR_JOK_PIN);
-    lastStangState   = digitalRead(SENSOR_STANG_PIN);
-    isAlarmArmed     = true;
-    isAlarmTriggered = false;
+    // Reset semua penghitung getaran & kunci posisi saat ini
+    lastJokState        = digitalRead(SENSOR_JOK_PIN);
+    lastStangState      = digitalRead(SENSOR_STANG_PIN);
+    vibrationCount      = 0;
+    lastSensorTriggered = false;
+    isAlarmTriggered    = false;
+    isAlarmArmed        = true;
+    alarmArmedTime      = millis(); // Mulai hitung jeda siap 2,5 detik
   }
-  server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+  redirectHome();
 }
 
 // --- HANDLER MATIKAN ALARM MANUAL ---
 void handleAlarmOff() {
-  isAlarmArmed     = false;
-  isAlarmTriggered = false;
+  isAlarmArmed        = false;
+  isAlarmTriggered    = false;
+  vibrationCount      = 0;
+  lastSensorTriggered = false;
   noTone(BUZZER_PIN);
   relayOff(RELAY_SEIN);
 
@@ -205,14 +227,14 @@ void handleAlarmOff() {
   lastStangState = digitalRead(SENSOR_STANG_PIN);
 
   signalSeinAndBeep(2, 80);
-  server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+  redirectHome();
 }
 
 // --- HANDLER CARI MOTOR / TES SIRINE ---
 void handlePanic() {
   isAlarmTriggered = true;
   sirenStartTime   = millis();
-  server.send(200, "text/html; charset=utf-8", buildHtmlPage());
+  redirectHome();
 }
 
 void setup() {
@@ -256,15 +278,29 @@ void loop() {
   checkLimitSwitch(SENSOR_JOK_PIN, lastJokState, lastJokMillis, currentMillis);
   checkLimitSwitch(SENSOR_STANG_PIN, lastStangState, lastStangMillis, currentMillis);
 
-  // 2. DETEKSI SENSOR GETAR SW-420 (Pin D6 - Hanya saat alarm AKTIF)
-  if (isAlarmArmed && !isEngineOn && !isAlarmTriggered) {
+  // 2. DETEKSI SENSOR GETAR SW-420 (Pin D6 - Aktif setelah jeda 2,5 detik)
+  if (isAlarmArmed && !isEngineOn && !isAlarmTriggered && (currentMillis - alarmArmedTime >= JEDA_SIAP_ALARM)) {
     int alarmSensorVal = digitalRead(SENSOR_ALARM);
-    bool triggered = ALARM_SENSOR_ACTIVE_LOW ? (alarmSensorVal == LOW) : (alarmSensorVal == HIGH);
+    bool currentTriggered = ALARM_SENSOR_ACTIVE_LOW ? (alarmSensorVal == LOW) : (alarmSensorVal == HIGH);
 
-    if (triggered) {
-      isAlarmTriggered = true;
-      sirenStartTime   = currentMillis;
+    // Hitung tiap kali getaran baru terdeteksi (jeda minimal 120 ms antar ketukan)
+    if (currentTriggered && !lastSensorTriggered && (currentMillis - lastVibrationPulse > 120)) {
+      lastVibrationPulse = currentMillis;
+
+      if (vibrationCount == 0 || (currentMillis - firstVibrationTime > RENTANG_GETAR_MS)) {
+        vibrationCount     = 1;
+        firstVibrationTime = currentMillis;
+      } else {
+        vibrationCount++;
+      }
+
+      if (vibrationCount >= JUMLAH_GETAR_PICU) {
+        isAlarmTriggered = true;
+        sirenStartTime   = currentMillis;
+        vibrationCount   = 0;
+      }
     }
+    lastSensorTriggered = currentTriggered;
   }
 
   // 3. EKSEKUSI SIRINE + LAMPU SEIN BERKEDIP BERSAMAAN
