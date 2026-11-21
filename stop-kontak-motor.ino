@@ -14,8 +14,10 @@ const int RELAY_SEIN       = 13; // D7 (GPIO13) - Relay 3: Lampu Sein Depan & Be
 const int BUZZER_PIN       = 14; // D5 (GPIO14) - Buzzer Suara Nyaring
 const int SENSOR_ALARM     = 12; // D6 (GPIO12) - Sensor Getar SW-420 / Anti-Maling
 const int SENSOR_JOK_PIN   = 3;  // Pin RX (GPIO3) - Bebas gagal booting meski jok terbuka/tertutup
-const int SENSOR_STANG_PIN = 2;  // D4 (GPIO2) - Limit Switch 2: Kunci Stang (pakai kaki NC)
+const int SENSOR_STANG_PIN = 16; // D0 (GPIO16) - Bebas gagal booting
 
+// 2. Ubah di dalam void setup() (ganti INPUT_PULLUP menjadi INPUT_PULLDOWN_16):
+pinMode(SENSOR_STANG_PIN, INPUT_PULLDOWN_16);
 // --- PENGATURAN WAKTU & SENSITIVITAS (Milidetik) ---
 const int JEDA_FUEL_PUMP          = 3000;  // 3 detik tunggu fuel pump naik
 const int DURASI_STARTER          = 1000;  // 1 detik durasi starter
