@@ -5,7 +5,7 @@
 const char* ssid          = "SMART_VARIO_125"; 
 const char* password      = "Snowboy14@";        // Minimal 8 karakter
 const bool  HIDDEN_SSID   = false;               // Ubah ke 'true' jika ingin nama Wi-Fi disembunyikan
-const String SECRET_TOKEN = "BeatK81_Rahasia99"; // Kunci rahasia wajib dari aplikasi HP
+const String SECRET_TOKEN = "Smart_motor_corporation"; // Kunci rahasia wajib dari aplikasi HP
 
 // Alamat IP Custom NodeMCU (bebas diganti, misalnya 10.20.30.1 atau 172.16.88.1)
 IPAddress local_IP(10, 20, 30, 1);
