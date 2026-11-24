@@ -3,8 +3,8 @@
 
 // --- KONFIGURASI WIFI AP & KEAMANAN AKSES (BISA DIUBAH SESUAI KEINGINAN) ---
 const char* ssid          = "SMART_VARIO_125"; 
-const char* password      = "Snowboy14@";        // Minimal 8 karakter
-const bool  HIDDEN_SSID   = false;               // Ubah ke 'true' jika ingin nama Wi-Fi disembunyikan
+const char* password      = "Snowboy14@";              // Minimal 8 karakter
+const bool  HIDDEN_SSID   = false;                     // Ubah ke 'true' jika ingin nama Wi-Fi disembunyikan
 const String SECRET_TOKEN = "Smart_motor_corporation"; // Kunci rahasia wajib dari aplikasi HP
 
 // Alamat IP Custom NodeMCU (bebas diganti, misalnya 10.20.30.1 atau 172.16.88.1)
@@ -59,18 +59,13 @@ unsigned long lastJokMillis   = 0;
 int lastStangState            = LOW;
 unsigned long lastStangMillis = 0;
 
-// --- PENGECEKAN KEAMANAN TOKEN APLIKASI ---
+// --- PENGECEKAN KEAMANAN TOKEN APLIKASI (KOMPATIBEL SEMUA VERSI ESP8266) ---
 bool isAuthorized() {
-  // 1. Cek token dari parameter URL (?token=...)
   if (server.hasArg("token") && server.arg("token") == SECRET_TOKEN) {
     return true;
   }
-  // 2. Cek token dari HTTP Header (X-Auth-Token)
-  if (server.hasHeader("X-Auth-Token") && server.header("X-Auth-Token") == SECRET_TOKEN) {
-    return true;
-  }
   
-  // Tolak akses jika tidak membawa token yang valid
+  // Tolak akses jika dibuka tanpa token yang valid
   server.send(403, "text/plain", "403 Forbidden: Akses Ditolak!");
   return false;
 }
@@ -294,10 +289,6 @@ void setup() {
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_IP, gateway, subnet);
   WiFi.softAP(ssid, password, 1, HIDDEN_SSID);
-
-  // Izinkan pembacaan HTTP Header khusus dari aplikasi HP
-  const char* headerkeys[] = {"X-Auth-Token"};
-  server.collectHeaders(headerkeys, 1);
 
   server.on("/", [](){
     if (!isAuthorized()) return;
