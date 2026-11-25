@@ -112,9 +112,9 @@ class _MotorDashboardState extends State<MotorDashboard>
         headers: {
           'X-Auth-Token': secretToken,
         },
-      ).timeout(const Duration(seconds: 4));
+      ).timeout(const Duration(seconds: 8));
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 303) {
         HapticFeedback.mediumImpact();
         setState(() {
           isConnected = true;
@@ -192,7 +192,7 @@ class _MotorDashboardState extends State<MotorDashboard>
     );
 
     if (sukses) {
-      await Future.delayed(const Duration(milliseconds: 3800));
+      await Future.delayed(const Duration(milliseconds: 350));
       if (mounted) {
         HapticFeedback.heavyImpact();
         setState(() {
@@ -328,7 +328,7 @@ class _MotorDashboardState extends State<MotorDashboard>
                   const SizedBox(height: 12),
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 3800),
+                    duration: const Duration(milliseconds: 4200),
                     builder: (context, value, _) {
                       return ClipRRect(
                         borderRadius: BorderRadius.circular(8),
